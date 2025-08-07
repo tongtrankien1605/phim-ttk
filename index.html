@@ -21,10 +21,11 @@
                 justify-content: center;
                 align-items: center;
             }
-            video {
+            video, iframe {
                 width: 98%;
-                max-height: 95vh;
+                height: 95vh; /* Đặt chiều cao cố định */
                 object-fit: contain;
+                border: none;
             }
             .video-title {
                 position: absolute;
@@ -89,10 +90,10 @@
         </style>
     </head>
     <body>
-        <div class="video-container">
+        <div class="video-container" id="videoContainer">
             <video id="videoPlayer" controls autoplay>
                 <source src="" type="video/mp4" />
-                Your browser does not support the video tag.
+                Trình duyệt của bạn không hỗ trợ thẻ video.
             </video>
             <div class="video-title" id="videoTitle"></div>
             <div class="video-info" id="videoInfo">
@@ -113,74 +114,83 @@
             const videoTitle = document.getElementById("videoTitle");
             const loading = document.getElementById("loading");
             const episodeSelect = document.getElementById("episodeSelect");
+            const videoContainer = document.getElementById("videoContainer");
 
-            // Hàm parse CSV thành mảng đối tượng
             function parseCSV(csvText) {
                 const lines = csvText.trim().split("\n");
-                const headers = lines[0].split(",").map((header) => header.trim());
-                const urlIndex = headers.indexOf("url");
-                const titleIndex = headers.indexOf("title");
-                const tapIndex = headers.indexOf("tap");
-                const coderIndex = headers.indexOf("coder");
-                const timeIndex = headers.indexOf("time");
+                const headers = lines[0].split(",").map((h) => h.trim());
                 const result = [];
+
                 for (let i = 1; i < lines.length; i++) {
-                    const cols = lines[i].split(",").map((col) => col.trim());
-                    if (cols[urlIndex] && cols[titleIndex] && cols[tapIndex]) {
+                    const cols = lines[i].split(",").map((c) => c.trim());
+                    if (cols.length >= 3) {
                         result.push({
-                            url: cols[urlIndex],
-                            title: cols[titleIndex],
-                            tap: cols[tapIndex],
-                            coder: cols[coderIndex] || "Tống Trần Kiên",
-                            time: cols[timeIndex] || ".........................",
+                            url: cols[headers.indexOf("url")],
+                            title: cols[headers.indexOf("title")],
+                            tap: cols[headers.indexOf("tap")],
+                            coder: cols[headers.indexOf("coder")] || "Tống Trần Kiên",
+                            time: cols[headers.indexOf("time")] || ".........................",
                         });
                     }
                 }
                 return result;
             }
 
-            // Hàm lưu chỉ số video hiện tại vào localStorage
             function saveVideoIndex(index) {
                 localStorage.setItem("lastVideoIndex", index);
             }
 
-            // Hàm lấy chỉ số video cuối cùng từ localStorage
             function getLastVideoIndex() {
-                const savedIndex = localStorage.getItem("lastVideoIndex");
-                return savedIndex !== null ? parseInt(savedIndex) : 0;
+                const saved = localStorage.getItem("lastVideoIndex");
+                return saved !== null ? parseInt(saved) : 0;
             }
 
-            // Hàm phát video hiện tại
+            function clearVideoContainer() {
+                const existingIframe = document.getElementById("embedPlayer");
+                if (existingIframe) existingIframe.remove();
+                videoPlayer.style.display = "none";
+                videoPlayer.pause();
+            }
+
             function playVideo(index) {
                 if (index >= 0 && index < videoList.length) {
-                    videoPlayer.src = videoList[index].url;
-                    videoPlayer.currentTime = 0; // Bắt đầu từ đầu
-                    videoTitle.textContent = videoList[index].title;
-                    document.getElementById("coder").textContent = videoList[index].coder;
-                    document.getElementById("time").textContent = videoList[index].time;
+                    const video = videoList[index];
+                    clearVideoContainer();
+
+                    videoTitle.textContent = video.title;
+                    document.getElementById("coder").textContent = video.coder;
+                    document.getElementById("time").textContent = video.time;
                     currentVideoIndex = index;
                     saveVideoIndex(index);
                     episodeSelect.value = index;
 
-                    const playPromise = videoPlayer.play();
-                    if (playPromise !== undefined) {
-                        playPromise.catch((error) => {
-                            console.error("Autoplay failed:", error);
-                            loading.textContent = "Vui lòng nhấn vào video để phát";
+                    if (video.url.includes(".mp4")) {
+                        videoPlayer.src = video.url;
+                        videoPlayer.style.display = "block";
+                        videoPlayer.currentTime = 0;
+                        videoPlayer.play().catch((err) => {
+                            console.error("Autoplay error:", err);
+                            loading.textContent = "Nhấn để phát video.";
                         });
+                    } else {
+                        const iframe = document.createElement("iframe");
+                        iframe.id = "embedPlayer";
+                        iframe.src = video.url;
+                        iframe.allowFullscreen = true;
+                        iframe.style.width = "98%";
+                        iframe.style.height = "95vh"; /* Đặt chiều cao cố định */
+                        iframe.style.border = "none";
+                        iframe.setAttribute("frameborder", "0");
+                        videoContainer.appendChild(iframe);
                     }
                 }
             }
 
-            // Hàm thay đổi tập khi chọn từ dropdown
             function changeEpisode() {
                 const selectedIndex = parseInt(episodeSelect.value);
-                if (!isNaN(selectedIndex)) {
-                    playVideo(selectedIndex);
-                }
+                if (!isNaN(selectedIndex)) playVideo(selectedIndex);
             }
 
-            // Hàm tải và hiển thị danh sách tập
             function populateEpisodeSelect() {
                 episodeSelect.innerHTML = '<option value="">Chọn tập</option>';
                 videoList.forEach((video, index) => {
@@ -191,7 +201,6 @@
                 });
             }
 
-            // Tải file CSV
             fetch("./data.csv")
                 .then((response) => {
                     if (!response.ok) throw new Error("Không thể tải file CSV");
@@ -202,21 +211,17 @@
                     loading.style.display = "none";
                     if (videoList.length > 0) {
                         populateEpisodeSelect();
-                        currentVideoIndex = getLastVideoIndex();
-                        if (currentVideoIndex >= videoList.length) {
-                            currentVideoIndex = 0;
-                        }
-                        playVideo(currentVideoIndex);
+                        const index = getLastVideoIndex();
+                        playVideo(index < videoList.length ? index : 0);
                     } else {
                         loading.textContent = "Không tìm thấy video trong danh sách";
                     }
                 })
-                .catch((error) => {
-                    console.error("Lỗi tải CSV:", error);
+                .catch((err) => {
+                    console.error("Lỗi tải CSV:", err);
                     loading.textContent = "Lỗi tải danh sách video";
                 });
 
-            // Phát lại video khi kết thúc
             videoPlayer.addEventListener("ended", () => {
                 videoPlayer.currentTime = 0;
                 videoPlayer.play();
